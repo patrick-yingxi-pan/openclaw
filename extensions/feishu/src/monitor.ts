@@ -407,7 +407,7 @@ async function monitorSingleAccount(params: MonitorAccountParams): Promise<void>
     accountId,
     runtime,
     chatHistories,
-    fireAndForget: connectionMode === "webhook",
+    fireAndForget: true,
   });
 
   if (connectionMode === "webhook") {
