@@ -1,0 +1,47 @@
+{
+  "name": "openclaw-command-center",
+  "version": "1.2.0",
+  "description": "🦞 AI agent command and control dashboard — Spawn more Overlords!",
+  "keywords": [
+    "agent",
+    "ai",
+    "chatgpt",
+    "claude",
+    "command-center",
+    "dashboard",
+    "llm",
+    "monitoring",
+    "openclaw"
+  ],
+  "homepage": "https://github.com/jontsai/openclaw-command-center#readme",
+  "bugs": {
+    "url": "https://github.com/jontsai/openclaw-command-center/issues"
+  },
+  "license": "MIT",
+  "author": "OpenClaw Contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jontsai/openclaw-command-center.git"
+  },
+  "type": "commonjs",
+  "main": "lib/server.js",
+  "scripts": {
+    "dev": "node --watch lib/server.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "ESLINT_USE_FLAT_CONFIG=true eslint lib/ tests/",
+    "lint:fix": "ESLINT_USE_FLAT_CONFIG=true eslint lib/ tests/ --fix",
+    "prepare": "echo 'Ready to spawn Overlords 🦞'",
+    "start": "node lib/server.js",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
