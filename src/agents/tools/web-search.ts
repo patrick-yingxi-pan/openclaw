@@ -22,7 +22,7 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "gemini", "grok", "kimi", "perplexity"] as const;
+const SEARCH_PROVIDERS = ["brave", "gemini", "google", "grok", "kimi", "perplexity"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
@@ -327,6 +327,11 @@ type GrokConfig = {
   inlineCitations?: boolean;
 };
 
+type GoogleConfig = {
+  apiKey?: string;
+  cx?: string; // Search Engine ID
+};
+
 type KimiConfig = {
   apiKey?: string;
   baseUrl?: string;
@@ -593,6 +598,14 @@ function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
       docs: "https://docs.openclaw.ai/tools/web",
     };
   }
+  if (provider === "google") {
+    return {
+      error: "missing_google_api_key",
+      message:
+        "web_search (google) needs a Google Custom Search API key and CX. Set GOOGLE_API_KEY and GOOGLE_CX in the Gateway environment, or configure tools.web.search.google.apiKey and tools.web.search.google.cx.",
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
   return {
     error: "missing_perplexity_api_key",
     message:
@@ -617,6 +630,9 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
   }
   if (raw === "kimi") {
     return "kimi";
+  }
+  if (raw === "google") {
+    return "google";
   }
   if (raw === "perplexity") {
     return "perplexity";
@@ -654,6 +670,16 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
         'web_search: no provider configured, auto-detected "kimi" from available API keys',
       );
       return "kimi";
+    }
+    // Google
+    const googleConfig = resolveGoogleConfig(search);
+    const googleApiKey = resolveGoogleApiKey(googleConfig);
+    const googleCx = resolveGoogleCx(googleConfig);
+    if (googleApiKey && googleCx) {
+      logVerbose(
+        'web_search: no provider configured, auto-detected "google" from available API keys',
+      );
+      return "google";
     }
     // Perplexity
     const perplexityConfig = resolvePerplexityConfig(search);
@@ -851,6 +877,36 @@ function resolveGrokModel(grok?: GrokConfig): string {
 
 function resolveGrokInlineCitations(grok?: GrokConfig): boolean {
   return grok?.inlineCitations === true;
+}
+
+function resolveGoogleConfig(search?: WebSearchConfig): GoogleConfig {
+  if (!search || typeof search !== "object") {
+    return {};
+  }
+  const google = "google" in search ? search.google : undefined;
+  if (!google || typeof google !== "object") {
+    return {};
+  }
+  return google as GoogleConfig;
+}
+
+function resolveGoogleApiKey(google?: GoogleConfig): string | undefined {
+  const fromConfig = normalizeApiKey(google?.apiKey);
+  if (fromConfig) {
+    return fromConfig;
+  }
+  // Support GOOGLE_API_KEY as environment variable
+  const fromEnv = normalizeApiKey(process.env.GOOGLE_API_KEY);
+  return fromEnv || undefined;
+}
+
+function resolveGoogleCx(google?: GoogleConfig): string | undefined {
+  // Support GOOGLE_CX as environment variable
+  const fromEnv = process.env.GOOGLE_CX;
+  if (fromEnv) {
+    return fromEnv;
+  }
+  return google?.cx;
 }
 
 function resolveKimiConfig(search?: WebSearchConfig): KimiConfig {
@@ -1522,6 +1578,49 @@ function mapBraveLlmContextResults(
   }));
 }
 
+type GoogleSearchResult = {
+  title: string;
+  link: string;
+  snippet: string;
+};
+
+type GoogleSearchResponse = {
+  items?: GoogleSearchResult[];
+};
+
+async function runGoogleSearch(params: {
+  query: string;
+  apiKey: string;
+  cx: string;
+  num: number;
+}): Promise<GoogleSearchResult[]> {
+  const url = new URL("https://www.googleapis.com/customsearch/v1");
+  url.searchParams.set("key", params.apiKey);
+  url.searchParams.set("cx", params.cx);
+  url.searchParams.set("q", params.query);
+  url.searchParams.set("num", String(Math.min(params.num, 10)));
+
+  const response = await withTrustedWebSearchEndpoint(
+    {
+      url: url.toString(),
+      timeoutSeconds: 30,
+      init: {
+        method: "GET",
+      },
+    },
+    async (res) => {
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Google Custom Search API error (${res.status}): ${errorText}`);
+      }
+      const data = (await res.json()) as GoogleSearchResponse;
+      return data.items || [];
+    },
+  );
+
+  return response;
+}
+
 async function runBraveLlmContextSearch(params: {
   query: string;
   apiKey: string;
@@ -1600,6 +1699,7 @@ async function runWebSearch(params: {
   grokModel?: string;
   grokInlineCitations?: boolean;
   geminiModel?: string;
+  googleCx?: string;
   kimiBaseUrl?: string;
   kimiModel?: string;
   braveMode?: "web" | "llm-context";
@@ -1769,6 +1869,34 @@ async function runWebSearch(params: {
     return payload;
   }
 
+  if (params.provider === "google") {
+    const googleResult = await runGoogleSearch({
+      query: params.query,
+      apiKey: params.apiKey,
+      cx: params.googleCx ?? "",
+      num: params.count,
+    });
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      tookMs: Date.now() - start,
+      externalContent: {
+        untrusted: true,
+        source: "web_search",
+        provider: params.provider,
+        wrapped: true,
+      },
+      results: googleResult.map((item) => ({
+        title: item.title,
+        url: item.link,
+        description: item.snippet,
+      })),
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
   if (params.provider !== "brave") {
     throw new Error("Unsupported web search provider.");
   }
@@ -1909,6 +2037,7 @@ export function createWebSearchTool(options?: {
   const grokConfig = resolveGrokConfig(search);
   const geminiConfig = resolveGeminiConfig(search);
   const kimiConfig = resolveKimiConfig(search);
+  const googleConfig = resolveGoogleConfig(search);
   const braveConfig = resolveBraveConfig(search);
   const braveMode = resolveBraveMode(braveConfig);
 
@@ -1949,10 +2078,22 @@ export function createWebSearchTool(options?: {
               ? resolveKimiApiKey(kimiConfig)
               : provider === "gemini"
                 ? resolveGeminiApiKey(geminiConfig)
-                : resolveSearchApiKey(search);
+                : provider === "google"
+                  ? resolveGoogleApiKey(googleConfig)
+                  : resolveSearchApiKey(search);
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
+      }
+
+      // Google Custom Search requires CX parameter
+      if (provider === "google" && !resolveGoogleCx(googleConfig)) {
+        return jsonResult({
+          error: "missing_google_cx",
+          message:
+            "web_search (google) needs a Google Search Engine ID (CX). Set GOOGLE_CX environment variable or configure tools.web.search.google.cx in the config.",
+          docs: "https://docs.openclaw.ai/tools/web",
+        });
       }
 
       const supportsStructuredPerplexityFilters =
@@ -2183,6 +2324,7 @@ export function createWebSearchTool(options?: {
         grokModel: resolveGrokModel(grokConfig),
         grokInlineCitations: resolveGrokInlineCitations(grokConfig),
         geminiModel: resolveGeminiModel(geminiConfig),
+        googleCx: resolveGoogleCx(googleConfig),
         kimiBaseUrl: resolveKimiBaseUrl(kimiConfig),
         kimiModel: resolveKimiModel(kimiConfig),
         braveMode,

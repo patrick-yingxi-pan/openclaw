@@ -221,6 +221,8 @@ export const FIELD_LABELS: Record<string, string> = {
   "tools.web.search.brave.mode": "Brave Search Mode",
   "tools.web.search.gemini.apiKey": "Gemini Search API Key", // pragma: allowlist secret
   "tools.web.search.gemini.model": "Gemini Search Model",
+  "tools.web.search.google.apiKey": "Google Custom Search API Key", // pragma: allowlist secret
+  "tools.web.search.google.cx": "Google Search Engine ID (CX)",
   "tools.web.search.grok.apiKey": "Grok Search API Key", // pragma: allowlist secret
   "tools.web.search.grok.model": "Grok Search Model",
   "tools.web.search.kimi.apiKey": "Kimi Search API Key", // pragma: allowlist secret
