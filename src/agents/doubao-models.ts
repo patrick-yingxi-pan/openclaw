@@ -30,7 +30,7 @@ export const DOUBAO_MODEL_CATALOG = [
   {
     id: "doubao-seed-code-preview-251028",
     name: "doubao-seed-code-preview-251028",
-    reasoning: false,
+    reasoning: true,
     input: ["text", "image"] as const,
     contextWindow: 256000,
     maxTokens: 4096,
@@ -38,7 +38,7 @@ export const DOUBAO_MODEL_CATALOG = [
   {
     id: "doubao-seed-1-8-251228",
     name: "Doubao Seed 1.8",
-    reasoning: false,
+    reasoning: true,
     input: ["text", "image"] as const,
     contextWindow: 256000,
     maxTokens: 4096,
@@ -48,7 +48,7 @@ export const DOUBAO_MODEL_CATALOG = [
   {
     id: "deepseek-v3-2-251201",
     name: "DeepSeek V3.2",
-    reasoning: false,
+    reasoning: true,
     input: ["text", "image"] as const,
     contextWindow: 128000,
     maxTokens: 4096,
@@ -69,7 +69,7 @@ export const DOUBAO_CODING_MODEL_CATALOG = [
   {
     id: "doubao-seed-code-preview-251028",
     name: "Doubao Seed Code Preview",
-    reasoning: false,
+    reasoning: true,
     input: ["text"] as const,
     contextWindow: 256000,
     maxTokens: 4096,
