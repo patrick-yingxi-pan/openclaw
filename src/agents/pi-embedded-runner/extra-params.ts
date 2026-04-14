@@ -37,6 +37,10 @@ import {
   resolveOpenAIFastMode,
   resolveOpenAIServiceTier,
 } from "./openai-stream-wrappers.js";
+import {
+  createVolcengineThinkingOffWrapper,
+  shouldApplyVolcengineThinkingOffCompat,
+} from "./proxy-stream-wrappers.js";
 import { createXaiFastModeWrapper } from "./xai-stream-wrappers.js";
 
 const defaultProviderRuntimeDeps = {
@@ -353,6 +357,12 @@ export function applyExtraParamsToAgent(
       `normalizing thinking=off to thinking=null for SiliconFlow compatibility (${provider}/${modelId})`,
     );
     agent.streamFn = createSiliconFlowThinkingWrapper(agent.streamFn);
+  }
+
+  // Volcengine's OpenAI-compatible API rejects reasoning_effort + thinking.type=disabled
+  if (shouldApplyVolcengineThinkingOffCompat({ provider, thinkingLevel })) {
+    log.debug(`removing reasoning_effort for Volcengine with thinking=off`);
+    agent.streamFn = createVolcengineThinkingOffWrapper(agent.streamFn, thinkingLevel);
   }
 
   agent.streamFn = createAnthropicToolPayloadCompatibilityWrapper(agent.streamFn, {

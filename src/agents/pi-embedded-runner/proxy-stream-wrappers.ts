@@ -120,6 +120,40 @@ export function isProxyReasoningUnsupported(modelId: string): boolean {
   return modelId.toLowerCase().startsWith("x-ai/");
 }
 
+/**
+ * Check if Volcengine provider needs thinking=off payload normalization.
+ * Volcengine's ark-code-latest (OpenAI-compatible API) rejects the combination
+ * of reasoning_effort + thinking.type="disabled" with HTTP 400.
+ */
+export function shouldApplyVolcengineThinkingOffCompat(params: {
+  provider: string;
+  thinkingLevel?: ThinkLevel;
+}): boolean {
+  return params.provider === "volcengine" && params.thinkingLevel === "off";
+}
+
+/**
+ * Creates a wrapper that removes reasoning_effort from the payload when thinking is off.
+ * This is needed for providers like Volcengine that use OpenAI-compatible APIs but
+ * don't support the reasoning_effort parameter with thinking=disabled.
+ */
+export function createVolcengineThinkingOffWrapper(
+  baseStreamFn: StreamFn | undefined,
+  thinkingLevel?: ThinkLevel,
+): StreamFn {
+  const underlying = baseStreamFn ?? streamSimple;
+  return (model, context, options) => {
+    const onPayload = options?.onPayload;
+    return underlying(model, context, {
+      ...options,
+      onPayload: (payload) => {
+        normalizeProxyReasoningPayload(payload, thinkingLevel);
+        return onPayload?.(payload, model);
+      },
+    });
+  };
+}
+
 export function createKilocodeWrapper(
   baseStreamFn: StreamFn | undefined,
   thinkingLevel?: ThinkLevel,

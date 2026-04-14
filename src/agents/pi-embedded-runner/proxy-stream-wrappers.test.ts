@@ -2,7 +2,11 @@ import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { Context, Model } from "@mariozechner/pi-ai";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
-import { createOpenRouterWrapper } from "./proxy-stream-wrappers.js";
+import {
+  createOpenRouterWrapper,
+  createVolcengineThinkingOffWrapper,
+  shouldApplyVolcengineThinkingOffCompat,
+} from "./proxy-stream-wrappers.js";
 
 describe("proxy stream wrappers", () => {
   it("adds OpenRouter attribution headers to stream options", () => {
@@ -34,5 +38,51 @@ describe("proxy stream wrappers", () => {
         },
       },
     ]);
+  });
+
+  describe("shouldApplyVolcengineThinkingOffCompat", () => {
+    it("returns true for volcengine with thinking=off", () => {
+      expect(
+        shouldApplyVolcengineThinkingOffCompat({ provider: "volcengine", thinkingLevel: "off" }),
+      ).toBe(true);
+    });
+
+    it("returns false for volcengine without thinking=off", () => {
+      expect(
+        shouldApplyVolcengineThinkingOffCompat({ provider: "volcengine", thinkingLevel: "high" }),
+      ).toBe(false);
+      expect(shouldApplyVolcengineThinkingOffCompat({ provider: "volcengine" })).toBe(false);
+    });
+
+    it("returns false for non-volcengine providers", () => {
+      expect(
+        shouldApplyVolcengineThinkingOffCompat({ provider: "openai", thinkingLevel: "off" }),
+      ).toBe(false);
+      expect(
+        shouldApplyVolcengineThinkingOffCompat({ provider: "openrouter", thinkingLevel: "off" }),
+      ).toBe(false);
+    });
+  });
+
+  it("removes reasoning_effort when thinking=off for Volcengine", () => {
+    const captured: { payload: Record<string, unknown> } = {
+      payload: { reasoning_effort: "high" },
+    };
+    const model = {
+      api: "openai-completions",
+      provider: "volcengine",
+      id: "volcengine-plan/ark-code-latest",
+    } as Model<"openai-completions">;
+    const baseStreamFn: StreamFn = (_m, _ctx, options) => {
+      options?.onPayload?.(captured.payload, model);
+      return createAssistantMessageEventStream();
+    };
+
+    const wrapped = createVolcengineThinkingOffWrapper(baseStreamFn, "off");
+    const context: Context = { messages: [] };
+
+    void wrapped(model, context, {});
+
+    expect(captured.payload).not.toHaveProperty("reasoning_effort");
   });
 });
