@@ -327,12 +327,67 @@ export class MatrixClient {
     await this.startSyncSession({ bootstrapCrypto: true });
   }
 
+  private syncErrorCount = 0;
+  private maxSyncErrorsBeforeRestart = 5;
+  private syncErrorRestartDelayMs = 5000;
+
+  private setupSyncErrorHandling(): void {
+    // Listen for sync errors and auto-restart the client
+    this.client.on(ClientEvent.SessionLog, (logLine: string) => {
+      if (
+        logLine.includes("/sync error") ||
+        logLine.includes("ConnectionError") ||
+        logLine.includes("fetch failed")
+      ) {
+        this.syncErrorCount++;
+        LogService.warn(
+          "MatrixClientLite",
+          `Sync error detected (count: ${this.syncErrorCount}/${this.maxSyncErrorsBeforeRestart}): ${logLine}`,
+        );
+
+        if (this.syncErrorCount >= this.maxSyncErrorsBeforeRestart) {
+          LogService.error(
+            "MatrixClientLite",
+            `Too many sync errors (${this.syncErrorCount}), restarting client...`,
+          );
+          this.scheduleSyncRestart();
+        }
+      }
+    });
+
+    // Also listen for Session (connection) events
+    this.client.on(ClientEvent.Session, (session: unknown) => {
+      const sessionObj = session as { name?: string; level?: number };
+      if (sessionObj.name === "connected") {
+        // Connection restored, reset error count
+        if (this.syncErrorCount > 0) {
+          LogService.info("MatrixClientLite", "Connection restored, resetting sync error count");
+          this.syncErrorCount = 0;
+        }
+      }
+    });
+  }
+
+  private scheduleSyncRestart(): void {
+    this.syncErrorCount = 0;
+    setTimeout(async () => {
+      try {
+        this.stopSyncWithoutPersist();
+        await this.startSyncSession({ bootstrapCrypto: false });
+        LogService.info("MatrixClientLite", "Sync restarted after errors");
+      } catch (err) {
+        LogService.error("MatrixClientLite", "Failed to restart sync:", err);
+      }
+    }, this.syncErrorRestartDelayMs);
+  }
+
   private async startSyncSession(opts: { bootstrapCrypto: boolean }): Promise<void> {
     if (this.started) {
       return;
     }
 
     this.registerBridge();
+    this.setupSyncErrorHandling();
     await this.initializeCryptoIfNeeded();
 
     await this.client.startClient({
